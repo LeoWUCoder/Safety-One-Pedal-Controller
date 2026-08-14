@@ -1956,9 +1956,76 @@ LimpMode → NoFailureDetected
 
 但如果这样修改，应当同步修改SSR，而不是只改模型。
 
+### 基于功能安全的新增功能清单
 
+| 序号 | 添加/修改内容                    | 类型              | 对应需求               |
+| ---- | -------------------------------- | ----------------- | ---------------------- |
+| 1    | 单路踏板输入改为三路输入         | 接口修改          | SSR-014～019           |
+| 2    | 增加踏板Demux                    | Simulink          | SSR-014～019           |
+| 3    | 增加 `PedalVoter`                | Stateflow         | SSR-014～019           |
+| 4    | 增加 `Sensor Fail Mode`输出      | 接口修改          | SSR-034                |
+| 5    | 增加CAN可用性输入                | 接口修改          | SSR-001、031～033      |
+| 6    | 增加 `CANSignalChecker`          | Subsystem         | SSR-001、002、031～033 |
+| 7    | 增加安全制动替代                 | Switch逻辑        | SSR-001～003           |
+| 8    | 增加安全挡位替代                 | Switch＋AND       | SSR-031                |
+| 9    | 增加安全车速替代                 | Switch逻辑        | SSR-032                |
+| 10   | 增加CAN组合故障码                | 诊断逻辑          | SSR-033                |
+| 11   | 增加 `CAN BUS Fail Mode`输出     | 接口修改          | SSR-034                |
+| 12   | 汇总两类故障                     | Boolean OR        | SSR-004                |
+| 13   | 原有状态机封装进正常模式         | Stateflow重构     | SSR-004                |
+| 14   | 增加 `lastTimeMode`              | Stateflow局部变量 | SSR-004、006           |
+| 15   | 增加LimpMode                     | Stateflow         | SSR-006～009           |
+| 16   | 增加受限Drive                    | Stateflow         | SSR-007                |
+| 17   | 增加受限Reverse                  | Stateflow         | SSR-008                |
+| 18   | Limp Park/Neutral零扭矩          | Stateflow         | SSR-009                |
+| 19   | 增加故障复位输入                 | 接口＋Stateflow   | SSR-005                |
+| 20   | 主状态机改用全部安全处理后的输入 | 连线修改          | 整体安全机制           |
 
+## 完整需求链接表
 
+| 需求ID      | 需求内容简述                                   | 你要选中的模型元素            | 链接类型  | 元素内部对应实现                           |
+| ----------- | ---------------------------------------------- | ----------------------------- | --------- | ------------------------------------------ |
+| SSR-OPC-001 | 制动CAN有效时输出接收到的制动状态              | `CAN Signal Checker`          | Implement | 制动信号选择Switch                         |
+| SSR-OPC-002 | 制动CAN无效时替代为“已踩下”，故障权重为1       | `CAN Signal Checker`          | Implement | `logical(1)`、Switch、NOT、权重1           |
+| SSR-OPC-003 | Drive、Reverse、Brake中制动踩下时输出0 Nm      | `Controller Main Logic Chart` | Implement | `driveStop`、`reverseStop`、`barkStop`     |
+| SSR-OPC-004 | 诊断故障非零时保存挡位并进入LimpMode           | `Controller Main Logic Chart` | Implement | `NoFailureDetected → LimpMode`转换         |
+| SSR-OPC-005 | LimpMode下复位输入为真时返回正常模式           | `Controller Main Logic Chart` | Implement | `LimpMode → NoFailureDetected`转换         |
+| SSR-OPC-006 | 根据故障前挡位选择LimpMode初始状态             | `Controller Main Logic Chart` | Implement | `lastTimeMode`判断转换                     |
+| SSR-OPC-007 | Limp Drive输出`8×踏板位置`，车速≥20时输出0     | `Controller Main Logic Chart` | Implement | `LimpMode/Drive/normalDrive`               |
+| SSR-OPC-008 | Limp Reverse输出`-4×踏板位置`                  | `Controller Main Logic Chart` | Implement | `LimpMode/Reverse/normalReverse`           |
+| SSR-OPC-009 | Limp Park、Neutral或制动踩下时输出0            | `Controller Main Logic Chart` | Implement | Limp Park、Neutral、Drive/Reverse停止状态  |
+| SSR-OPC-010 | 正常Drive输出`80×可信踏板位置`                 | `Controller Main Logic Chart` | Implement | `NoFailureDetected/Drive/normalDrive`      |
+| SSR-OPC-011 | Brake加速区输出`120×(p-1/3)`                   | `Controller Main Logic Chart` | Implement | `Brake/brakeAccle`                         |
+| SSR-OPC-012 | Brake再生区输出`-240×(1/3-p)`                  | `Controller Main Logic Chart` | Implement | `Brake/barkDecele`                         |
+| SSR-OPC-013 | 正常Brake且制动踩下时输出0                     | `Controller Main Logic Chart` | Implement | `Brake/barkStop`                           |
+| SSR-OPC-014 | 三路正常时输出三路平均值                       | `Vote1`                       | Implement | `Normal`状态正常分支                       |
+| SSR-OPC-015 | A通道故障，输出B、C平均，故障码1               | `Vote1`                       | Implement | `Normal`判断和`A_Failure`                  |
+| SSR-OPC-016 | B通道故障，输出A、C平均，故障码2               | `Vote1`                       | Implement | `Normal`判断和`B_Failure`                  |
+| SSR-OPC-017 | C通道故障，输出A、B平均，故障码3               | `Vote1`                       | Implement | `Normal`判断和`C_Failure`                  |
+| SSR-OPC-018 | 剩余两路也不可信时故障码4、踏板输出0           | `Vote1`                       | Implement | A/B/C故障状态中的二次诊断                  |
+| SSR-OPC-019 | 单路故障不自动恢复，NO_Trust保持锁存           | `Vote1`                       | Implement | A/B/C故障状态和`NO_Trust`                  |
+| SSR-OPC-020 | Brake再生且车速≤0.2时进入零速控制              | `Controller Main Logic Chart` | Implement | `barkDecele → brak0Velocity`转换           |
+| SSR-OPC-021 | 零速控制计算`30×误差+2×累积误差`               | `Controller Main Logic Chart` | Implement | `brak0Velocity`状态                        |
+| SSR-OPC-022 | 踏板大于1/3时退出零速控制并清零积分            | `Controller Main Logic Chart` | Implement | `brak0Velocity → brakeAccle`转换和退出动作 |
+| SSR-OPC-023 | 正常模式初始化进入Park并输出0 Nm               | `Controller Main Logic Chart` | Implement | 正常模式默认转换、Park状态                 |
+| SSR-OPC-024 | Park中踩制动且请求非Park时进入Neutral          | `Controller Main Logic Chart` | Implement | `Park → Neutral`转换                       |
+| SSR-OPC-025 | Neutral中满足车速和制动条件时进入Park          | `Controller Main Logic Chart` | Implement | `Neutral → Park`转换                       |
+| SSR-OPC-026 | Neutral中满足条件并请求Reverse时进入Reverse    | `Controller Main Logic Chart` | Implement | `Neutral → Reverse`转换                    |
+| SSR-OPC-027 | Neutral中满足条件并请求Drive或Brake时进入Drive | `Controller Main Logic Chart` | Implement | `Neutral → Drive`转换                      |
+| SSR-OPC-028 | Reverse中不再请求Reverse时进入Neutral          | `Controller Main Logic Chart` | Implement | `Reverse → Neutral`转换                    |
+| SSR-OPC-029 | Drive中请求Neutral或满足条件请求Brake时转换    | `Controller Main Logic Chart` | Implement | `Drive → Neutral`、`Drive → Brake`         |
+| SSR-OPC-030 | Brake中请求Drive或Neutral时进入Drive           | `Controller Main Logic Chart` | Implement | `Brake → Drive`转换                        |
+| SSR-OPC-031 | 挡位和车速CAN都有效时输出挡位，否则Neutral     | `CAN Signal Checker`          | Implement | 挡位Switch及AND逻辑                        |
+| SSR-OPC-032 | 车速CAN有效时输出车速，否则输出0               | `CAN Signal Checker`          | Implement | 车速Switch和常量0                          |
+| SSR-OPC-033 | CAN故障按1、2、4编码并相加为0～7               | `CAN Signal Checker`          | Implement | NOT、类型转换、Product、Add                |
+| SSR-OPC-034 | 两种故障模式必须输出为`int8`                   | `Sensor Fail Mode`输出端口    | Implement | 传感器故障模式输出类型                     |
+| SSR-OPC-034 | 两种故障模式必须输出为`int8`                   | `CAN BUS Fail Mode`输出端口   | Implement | CAN故障模式输出类型                        |
+
+## 不足
+
+车速功能安全没有
+
+车速>-5没和功能安全对上
 
 ## 单踏板模式
 

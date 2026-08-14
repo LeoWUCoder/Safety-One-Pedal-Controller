@@ -1,0 +1,6 @@
+-ID:/SWC_Simulink_Learning/MBD/Safety-One-Pedal-Controller/SafetySetting
+-ID:/SWC_Simulink_Learning/MBD/Safety-One-Pedal-Controller/SafetySetting/Control_model_grt_rtw
+-I"D:/Program Files/MATLAB/R2024b/extern/include"
+-I"D:/Program Files/MATLAB/R2024b/simulink/include"
+-I"D:/Program Files/MATLAB/R2024b/rtw/c/src"
+-I"D:/Program Files/MATLAB/R2024b/rtw/c/src/ext_mode/common"

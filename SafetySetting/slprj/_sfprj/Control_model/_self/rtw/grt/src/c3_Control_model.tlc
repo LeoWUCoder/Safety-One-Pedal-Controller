@@ -1,0 +1,95 @@
+%implements "chartSource" "C"
+%function ChartConfig(block, system) void
+  %createrecord chartConfiguration { ...
+          executeAtInitialization  0 ...
+  }
+  %return chartConfiguration
+%endfunction
+%function ChartDataMap(block, system) void
+  %createrecord ChartDataElements {\
+    NumChartData   11 \
+    ChartDataDefaults {\
+      RecordType   "ChartData"\
+      Dimensions   []\
+      IsTestPoint  0\
+    }\
+    ChartData {\
+      Name         "sumError"\
+      Description  "ChartLocal"\
+      SFName       ""\
+      Path         "sumError"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_active_c3_Control_model"\
+      Description  "StateIsActive"\
+      SFName       ""\
+      Path         ""\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_c3_Control_model"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         ""\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_LimpMode"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "LimpMode"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_Drive"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "LimpMode.Drive"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_Reverse"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "LimpMode.Reverse"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_NoFailureDetected"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "NoFailureDetected"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_Brake"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "NoFailureDetected.Brake"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_BrakeNormal"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "NoFailureDetected.Brake.BrakeNormal"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_Drive"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "NoFailureDetected.Drive"\
+      SrcLocation  ""\
+    }\
+    ChartData {\
+      Name         "is_Reverse"\
+      Description  "StateActiveChild"\
+      SFName       ""\
+      Path         "NoFailureDetected.Reverse"\
+      SrcLocation  ""\
+    }\
+  }
+  %return ChartDataElements
+%endfunction
