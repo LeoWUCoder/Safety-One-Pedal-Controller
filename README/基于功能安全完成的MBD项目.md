@@ -1981,6 +1981,695 @@ LimpMode → NoFailureDetected
 | 19   | 增加故障复位输入                 | 接口＋Stateflow   | SSR-005                |
 | 20   | 主状态机改用全部安全处理后的输入 | 连线修改          | 整体安全机制           |
 
+### Harness修改
+
+把驾驶员输出的单路踏板信号，改造成三路踏板传感器信号，并接入新 Controller。模拟有三路传感器
+
+**踏板传感器模拟子系统**
+
+![image-20260815120722303](./assets/image-20260815120722303.png)
+
+三路噪声的参数设置：
+
+| 参数     | Noise_A   | Noise_B   | Noise_C   |
+| -------- | --------- | --------- | --------- |
+| 最小值   | `-0.0005` | `-0.0005` | `-0.0005` |
+| 最大值   | `0.0005`  | `0.0005`  | `0.0005`  |
+| 初始种子 | `101`     | `102`     | `103`     |
+| 采样时间 | `0.01`    | `0.01`    | `0.01`    |
+
+三路噪声模块不是为了制造“故障”，而是为了模拟三个真实踏板传感器在正常状态下存在的独立测量误差。
+
+理想情况下三个传感器都测量同一个踏板位置：
+
+```
+真实踏板位置 p
+```
+
+实际输出通常略有不同：
+
+```
+传感器A = p + noiseA
+传感器B = p + noiseB
+传感器C = p + noiseC
+```
+
+例如真实踏板位置为 `0.5000`：
+
+```
+A = 0.5002
+B = 0.4997
+C = 0.5001
+```
+
+这属于正常测量误差，不应该被投票器误判为故障。
+
+使用的是：
+
+```
+Uniform Random Number
+均匀随机数
+```
+
+参数如下：
+
+| 参数     | 建议值        | 含义                                                         |
+| -------- | ------------- | ------------------------------------------------------------ |
+| 最小值   | `-0.0005`     | 噪声最小偏差                                                 |
+| 最大值   | `0.0005`      | 噪声最大偏差                                                 |
+| 初始种子 | `101/102/103` | 决定随机数序列——就是哪一组随机数（三组噪声不能一样），也可以写randi(99999)——种子号也随机变 |
+| 采样时间 | `0.01`        | 每10 ms更新一次噪声——和项目控制器的运行周期一致              |
+
+如果要可复现——用固定种子，要求完全随机用randi(99999)
+
+![image-20260815121536929](./assets/image-20260815121536929.png)
+
+CAN signal fail mode Decoder——解码CAN故障码
+
+```matlab
+function [bit0,bit1,bit2]= fcn(val)
+
+    bit0 = bitand(val, 1);//结果只有最低位（第 0 位）被保留，其余位被清零。因此 bit0 得到 val 的二进制最低位（0 或 1）。
+    bit1 = bitand(bitshift(val, -1), 1);// 原始 val 的第 1 位。结果赋给 bit1。
+    bit2 = bitand(bitshift(val, -2), 1);// 原始 val 的第 2 位。结果赋给 bit2。
+
+end
+
+```
+
+`bitand` 函数主要有两种调用形式：
+
+1. **基础语法**：`C = bitand(A, B)`
+   这是最常用的形式，计算 `A` 和 `B` 的按位与。
+2. **指定数据类型**：`C = bitand(A, B, assumedtype)`
+   当输入 `A` 和 `B` 是 `double`（双精度浮点）数组时，可以用此语法明确指定将它们视为哪种整数类型来进行运算。
+
+这里是把val的二进制和1的二进制按位置求与，输出的结果是十进制
+
+位与的逻辑极其简单，只有一种情况出 **1**：
+
+| 操作数 A 的位 | 操作数 B 的位 | 结果  |
+| :------------ | :------------ | :---- |
+| 0             | 0             | **0** |
+| 0             | 1             | **0** |
+| 1             | 0             | **0** |
+| 1             | 1             | **1** |
+
+**口诀记忆**：**“两者都为 1，结果才为 1；只要有一个 0，结果就是 0。”**
+
+- `bitshift(val, -1)` 将 `val` 的二进制表示**向右移动 1 位**（相当于整数除以 2 并向下取整）。`k > 0` 表示左移
+
+**CAN可用性模拟器**
+
+增加三个可控布尔信号：
+
+```
+BrakeAvailable
+ATSelectorAvailable
+SpeedAvailable
+```
+
+通过 `Mux` 组合：
+
+```
+[BrakeAvailable, ATSelectorAvailable, SpeedAvailable]
+```
+
+接入 Controller 的：
+
+```
+CAN BUS available Signals
+```
+
+正常仿真时：
+
+```
+[true, true, true]
+```
+
+故障测试时可以分别设置为：
+
+```
+[false, true,  true ]   % 制动CAN故障，故障码1
+[true,  false, true ]   % 挡位CAN故障，故障码2
+[true,  true,  false]   % 车速CAN故障，故障码4
+```
+
+还要测试组合故障：
+
+```
+[false, false, true ]   % 3
+[false, true,  false]   % 5
+[true,  false, false]   % 6
+[false, false, false]   % 7
+```
+
+### 测试集构建
+
+在 MATLAB 命令行执行：
+
+```
+ver
+```
+
+检查列表中是否有：
+
+```
+Simulink Test
+```
+
+然后执行：
+
+```
+sltestmgr
+```
+
+或者：
+
+```
+sltest.testmanager.view
+```
+
+这会打开“Simulink 测试管理器”。这是官方提供的测试文件、套件、用例和结果管理界面。[测试管理器说明](https://ww2.mathworks.cn/help/sltest/ref/simulinktestmanager.html)
+
+**创建测试文件**
+
+在“测试管理器”窗口中：
+
+```
+文件
+→ 新建
+→ 测试文件
+```
+
+保存到你当前项目的测试目录：
+
+```
+D:\SWC_Simulink_Learning\MBD\One-Pedal-Controller\
+3. FSC&SafetyMech\Model\Test\controller_testFile.mldatx
+```
+
+如果没有 `Test` 文件夹，先新建该文件夹。
+
+新建测试文件时，MATLAB通常自动创建：
+
+```
+测试文件
+└─ 测试套件
+   └─ 测试用例
+```
+
+`.mldatx` 保存测试结构、测试配置、输入、参数覆盖、基线及结果引用，不是Simulink模型。
+
+**建立三个测试套件**
+
+在左侧“测试浏览器”中，对测试文件：
+
+```
+controller_testFile
+```
+
+单击右键，选择：
+
+```
+新建
+→ 测试套件
+```
+
+建立三个测试套件：
+
+```
+Voter_TestKit
+CANbus_CheckerKit
+Integrated_test
+```
+
+最终结构：
+
+```
+controller_testFile
+├─ Voter_TestKit
+├─ CANbus_CheckerKit
+└─ Integrated_test
+```
+
+原来自动生成的默认测试套件不需要时可以删除。
+
+三个套件分别负责：
+
+| 测试套件            | 测试对象                | 覆盖需求                   |
+| ------------------- | ----------------------- | -------------------------- |
+| `Voter_TestKit`     | 踏板表决器 `Vote1`      | SSR-OPC-014～019           |
+| `CANbus_CheckerKit` | `CAN Signal Checker`    | SSR-OPC-001、002、031～034 |
+| `Integrated_test`   | 完整Harness和Controller | 其余Controller集成需求     |
+
+测试类型有三种：
+
+| 类型       | 现在是否使用 | 作用                            |
+| ---------- | ------------ | ------------------------------- |
+| 仿真测试   | 是           | 输入故障并使用断言判断通过/失败 |
+| 基线测试   | 暂时不使用   | 与提前保存的正确波形比较        |
+| 等效性测试 | 暂时不使用   | 比较普通仿真与SIL/PIL结果       |
+
+现在优先用“仿真测试”。等代码生成后，再增加普通仿真与SIL的等效性测试。
+
+1. **Voter_TestKit**
+
+右键 `Voter_TestKit`，逐个新建“仿真测试”：
+
+```
+Voter_Normal
+Voter_A_Fail
+Voter_B_Fail
+Voter_C_Fail
+Voter_NoTrust
+Voter_FaultLatch
+```
+
+**2. CANbus_CheckerKit**
+
+建立：
+
+```
+CAN_Normal
+BrakeCAN_Fail
+ATSelectorCAN_Fail
+Brake_AT_Fail
+SpeedCAN_Fail
+Brake_Speed_Fail
+AT_Speed_Fail
+All_CAN_Fail
+```
+
+**3. Integrated_test**
+
+建立：
+
+```
+Normal_Driving
+Throttle_Pedal_Fail
+BrakeCAN_Fail_Integrated
+ATSelectorCAN_Fail_Integrated
+SpeedCAN_Fail_Integrated
+LimpDrive_TorqueLimit
+LimpDrive_SpeedLimit
+LimpReverse_TorqueLimit
+Reset_After_Fault_Clear
+Reset_With_Fault_Active
+```
+
+完整树形结构：
+
+```
+controller_testFile
+├─ Voter_TestKit
+│  ├─ Voter_Normal
+│  ├─ Voter_A_Fail
+│  ├─ Voter_B_Fail
+│  ├─ Voter_C_Fail
+│  ├─ Voter_NoTrust
+│  └─ Voter_FaultLatch
+│
+├─ CANbus_CheckerKit
+│  ├─ CAN_Normal
+│  ├─ BrakeCAN_Fail
+│  ├─ ATSelectorCAN_Fail
+│  ├─ Brake_AT_Fail
+│  ├─ SpeedCAN_Fail
+│  ├─ Brake_Speed_Fail
+│  ├─ AT_Speed_Fail
+│  └─ All_CAN_Fail
+│
+└─ Integrated_test
+   ├─ Normal_Driving
+   ├─ Throttle_Pedal_Fail
+   ├─ BrakeCAN_Fail_Integrated
+   ├─ ATSelectorCAN_Fail_Integrated
+   ├─ SpeedCAN_Fail_Integrated
+   ├─ LimpDrive_TorqueLimit
+   ├─ LimpDrive_SpeedLimit
+   ├─ LimpReverse_TorqueLimit
+   ├─ Reset_After_Fault_Clear
+   └─ Reset_With_Fault_Active
+```
+
+先创建名称即可，不需要一次配置全部内容。
+
+
+
+具体操作：
+
+![image-20260815192705250](./assets/image-20260815192705250.png)
+
+![image-20260815192759045](./assets/image-20260815192759045.png)
+
+![image-20260815193407416](./assets/image-20260815193407416.png)
+
+```
+a = single(0.5);
+b = single(0.5);
+c = single(0.5);
+```
+
+是正确的。
+
+**增加检查步骤**
+
+现在的 `Normal` 只负责提供输入，还没有判断测试是否通过。
+
+在 `Test Assessment` 中接收：
+
+```
+out
+SensorFailMode
+```
+
+并写判定：
+
+```
+verify(abs(out - single(0.5)) <= single(1e-6));
+verify(SensorFailMode == int8(0));
+```
+
+为了避免仿真刚开始时立即判断，可以在 Test Assessment 里做两个步骤：
+
+```
+Wait
+  ↓ after(0.1, sec)
+Check
+```
+
+**选择使用场景**
+
+![image-20260815195459310](./assets/image-20260815195459310.png)
+
+不要新建测试框架，继续在同一个 `Vote1_TestHarness/Test Sequence` 中添加场景：
+
+```
+Voter_A_Fail
+Voter_B_Fail
+Voter_C_Fail
+Voter_NoTrust
+Voter_FaultLatch
+```
+
+PedalVoter_Harness框架：
+
+有两个判断：
+
+| Assertion 块            | 判断内容                                              |
+| ----------------------- | ----------------------------------------------------- |
+| `ThrottlePedalPosition` | Voter 实际输出是否等于 Test Sequence 给出的期望 `out` |
+| `SensorFailMode`        | 实际故障码是否等于期望 `SensorFailMode`               |
+
+只要 `==` 的结果为假，Assertion 就会失败，测试用例也会失败。
+
+18 个场景分成两类。
+
+第一类：12 个越界故障场景
+
+```
+A_AB_less0    A_AB_over1
+A_AC_less0    A_AC_over1
+
+B_BA_less0    B_BA_over1
+B_BC_less0    B_BC_over1
+
+C_AC_less0    C_AC_over1
+C_BC_less0    C_BC_over1
+```
+
+命名规则：
+
+```
+故障传感器_参与比较的通道_故障方向
+```
+
+例如：
+
+```
+A_AB_less0
+```
+
+表示：
+
+- 重点检查传感器 A；
+- 覆盖 A-B 比较分支；
+- A 输入小于合法下限 0。
+
+这个场景实际执行过程是：
+
+| 时间阶段   | A    | B    | C    | 期望输出      | 期望故障码 |
+| ---------- | ---- | ---- | ---- | ------------- | ---------- |
+| 初始       | 0    | 0    | 0    | 三路平均      | 0          |
+| 0.1 s 后   | -1.5 | 0.5  | 0.5  | `(B+C)/2=0.5` | 1          |
+| 再过 0.1 s | -1.5 | -1.5 | -1.5 | 0             | 4          |
+
+`over1` 则表示传感器数值超过合法上限1，例如 A=1.5。
+
+第二类：6 个通道不一致场景
+
+```
+A_AB
+A_AC
+B_BA
+B_BC
+C_CA
+C_CB
+```
+
+这些场景不是简单的 `<0` 或 `>1`，而是：
+
+- 三路数值都可能仍在 `[0,1]` 范围内；
+- 但其中一路与另外两路偏差过大；
+- 检查 Voter 能否识别异常通道；
+- 然后进一步注入两路不一致，检查是否进入 `SensorFailMode=4`。
+
+例如 `A_AB` 大致依次检查：
+
+1. 三路正常，期望三路平均，故障码0。
+2. A 与 B、C 出现较大偏差。
+3. 识别 A 故障，输出采用 `(B+C)/2`，故障码1。
+4. A、B 两路都不可信，输出0，故障码4。
+
+更规范的做法是建立18个测试用例：
+
+```
+Voter_A_AB_less0
+Voter_A_AB_over1
+Voter_A_AC_less0
+...
+Voter_C_CB
+```
+
+每个测试用例选择一个 Test Sequence 场景。这样运行 `Voter_TestKit` 时，18个场景才会全部执行，并分别显示通过或失败。
+
+**CanSignal_Harness**
+
+CAN Checker 接收的信息是：
+
+| 输入                        | 类型                     | 含义                  |
+| --------------------------- | ------------------------ | --------------------- |
+| `BrakePedalPressed`         | boolean                  | 制动踏板状态          |
+| `ATSelectorState`           | `TransmissionState` 枚举 | 挡位状态              |
+| `VehicleSpeed_km_h`         | single                   | CAN 车速              |
+| `CAN BUS available Signals` | boolean[3]               | 三路 CAN 信号是否可用 |
+
+CAN 可用性向量顺序为：
+
+```
+[BrakeCAN, ATSelectorCAN, SpeedCAN]
+```
+
+约定：
+
+```
+1 = CAN 信号可用
+0 = CAN 信号失效
+```
+
+所以四个场景的核心区别是：
+
+| 场景                   | CAN 可用性向量 | 目的                  |
+| ---------------------- | -------------- | --------------------- |
+| `x0Normal_Driving`     | `[1 1 1]`      | 验证正常透传          |
+| `x1BreakCAN_Fail`      | `[0 1 1]`      | 验证制动 CAN 失效处理 |
+| `x2ATselectorCAN_Fail` | `[1 0 1]`      | 验证挡位 CAN 失效处理 |
+| `x3SpeedCAN_Fail`      | `[1 1 0]`      | 验证车速 CAN 失效处理 |
+
+这里 `x0`、`x1` 只是场景编号。加 `x` 是因为 MATLAB 变量不能以数字开头。
+
+
+
+
+
+**手动创建 x0Normal_Driving**
+
+**第1步：打开信号编辑器**
+
+双击：
+
+```
+Harness Inputs
+```
+
+进入 Signal Editor。
+
+左侧应该有“场景”区域，右侧应该显示4条输入信号。
+
+如果默认场景叫：
+
+```
+Scenario 1
+```
+
+将其重命名为：
+
+```
+x0Normal_Driving
+```
+
+**第2步：建立 BrakePedalPressed**
+
+选择：
+
+```
+BrakePedalPressed
+```
+
+输入时间和值：
+
+| 时间/s | 值   |
+| ------ | ---- |
+| 0      | 0    |
+| 5      | 1    |
+| 9      | 0    |
+| 10     | 0    |
+
+信号属性设置：
+
+```
+数据类型：boolean
+插值方式：零阶保持 ZOH
+```
+
+含义：
+
+- 0～5秒：未踩制动；
+- 5～9秒：踩下制动；
+- 9～10秒：释放制动。
+
+**第3步：建立 ATSelectorState**
+
+输入：
+
+| 时间/s | 枚举值                      | 底层值 |
+| ------ | --------------------------- | ------ |
+| 0      | `TransmissionState.Park`    | 0      |
+| 2      | `TransmissionState.Brake`   | 4      |
+| 7      | `TransmissionState.Neutral` | 2      |
+| 10     | `TransmissionState.Park`    | 0      |
+
+信号属性：
+
+```
+数据类型：Enum: TransmissionState
+插值方式：零阶保持 ZOH
+```
+
+枚举定义来自：
+
+```
+Park(0)
+Reverse(1)
+Neutral(2)
+Drive(3)
+Brake(4)
+```
+
+如果 Signal Editor 只让你输入数字，可填写：
+
+```
+[0, 4, 2, 0]
+```
+
+但信号数据类型仍应设置为：
+
+```
+Enum: TransmissionState
+```
+
+**第4步：建立 VehicleSpeed_km_h**
+
+正常驾驶场景输入：
+
+| 时间/s | 车速 km/h |
+| ------ | --------- |
+| 0      | 0         |
+| 1.004  | 13.694    |
+| 3      | 20        |
+| 4.8755 | 31.098    |
+| 5.3083 | 39.383    |
+| 6      | 45        |
+| 8.1126 | 31.472    |
+| 9      | 12        |
+| 10     | 0         |
+
+属性：
+
+```
+数据类型：single
+插值方式：线性 linear
+```
+
+这里使用线性插值，是为了让车速在相邻时间点间平滑变化，而不是阶跃跳变。
+
+**第5步：建立 CAN BUS available Signals**
+
+这是宽度为3的向量信号。
+
+正常场景填写：
+
+| 时间/s | BrakeCAN | AT CAN | SpeedCAN |
+| ------ | -------- | ------ | -------- |
+| 0      | 1        | 1      | 1        |
+| 10     | 1        | 1      | 1        |
+
+也就是：
+
+```
+[1 1 1
+ 1 1 1]
+```
+
+属性：
+
+```
+数据类型：boolean
+维度：3
+插值方式：零阶保持 ZOH
+```
+
+至此，`x0Normal_Driving` 完成。
+
+![image-20260815232131788](./assets/image-20260815232131788.png)
+
+对于多维度信号怎么处理？
+
+![image-20260815233429322](./assets/image-20260815233429322.png)
+
+![image-20260815233525619](./assets/image-20260815233525619.png)
+
+然后不要再插入10，不然还会出现3个signal，直接点击出现的signal编辑。
+
+![image-20260815233804327](./assets/image-20260815233804327.png)
+
+最好是1步到位不然容易卡住：
+
+![image-20260815234546772](./assets/image-20260815234546772.png)
+
+
+
 ## 完整需求链接表
 
 | 需求ID      | 需求内容简述                                   | 你要选中的模型元素            | 链接类型  | 元素内部对应实现                           |
@@ -2026,6 +2715,8 @@ LimpMode → NoFailureDetected
 车速功能安全没有
 
 车速>-5没和功能安全对上
+
+基线怎么设置
 
 ## 单踏板模式
 
